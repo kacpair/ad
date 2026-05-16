@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>중세 공성전 시뮬레이션</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #87CEEB; touch-action: none; font-family: 'Inter', sans-serif; user-select: none; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; display: flex; flex-direction: column; justify-content: space-between;
+        }
+        
+        #crosshair {
+            position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; background-color: #ff3333;
+            border-radius: 50%; transform: translate(-50%, -50%); opacity: 0.8; pointer-events: none;
+            box-shadow: 0 0 4px rgba(0,0,0,0.5);
+        }
+
+        #top-ui { padding: 20px; display: flex; justify-content: space-between; align-items: flex-start; }
+
+        #instructions {
+            background: rgba(0, 0, 0, 0.7); color: white; padding: 15px; border-radius: 8px; font-size: 14px; pointer-events: auto;
+        }
+        
+        #status-container { text-align: right; pointer-events: auto; }
+        #status-msg { color: #ffaa00; font-weight: bold; font-size: 22px; text-shadow: 2px 2px 4px #000; margin-bottom: 8px; }
+        #health-bar-container { width: 200px; height: 20px; background: rgba(0,0,0,0.5); border: 2px solid #fff; border-radius: 10px; overflow: hidden; float: right; }
+        #health-bar { width: 100%; height: 100%; background: #4ade80; transition: width 0.2s, background-color 0.2s; }
+
+        #damage-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: red; opacity: 0; transition: opacity 0.1s; pointer-events: none;
+        }
+
+        .mobile-controls { display: none; padding: 20px; justify-content: flex-end; gap: 15px; pointer-events: auto; }
+        .btn {
+            background: rgba(0, 0, 0, 0.5); border: 2px solid #fff; color: white; width: 60px; height: 60px;
+            border-radius: 50%; font-weight: bold; font-size: 14px; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        }
+        .btn:active { background: rgba(255, 255, 255, 0.4); transform: scale(0.95); }
+
+        /* 게임 오버 (재시작) 화면 스타일 */
+        #game-over-screen {
+            display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.85); z-index: 100; flex-direction: column; 
+            justify-content: center; align-items: center; pointer-events: auto;
+        }
+        #game-over-title { color: #ff3333; font-size: 48px; margin-bottom: 30px; text-shadow: 2px 2px 10px #000; font-weight: bold; }
+        #btn-restart {
+            padding: 15px 40px; font-size: 20px; background: #ffaa00; border: 2px solid #fff;
+            border-radius: 8px; cursor: pointer; font-weight: bold; color: #000; transition: 0.2s;
+        }
+        #btn-restart:hover { background: #ffcc00; transform: scale(1.05); }
+
+        @media (max-width: 768px) {
+            #instructions { display: none; }
+            .mobile-controls { display: flex; }
+            #status-msg { font-size: 16px; }
+            #game-over-title { font-size: 32px; }
+        }
+    </style>
+    <!-- Three.js 및 Cannon.js 로드 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+</head>
+<body>
+
+    <div id="ui-layer">
+        <div id="damage-overlay"></div>
+        <div id="crosshair"></div>
+        
+        <div id="top-ui">
+            <div id="instructions">
+                <h3 style="margin-top:0;">공성전 돌격!</h3>
+                <p><b>화면 클릭:</b> 시선 고정 (해제: ESC)</p>
+                <p><b>W, A, S, D:</b> 이동</p>
+                <p><b>Space:</b> 점프</p>
+                <p><b>마우스 좌클릭:</b> 성문 공격 (성문 돌파!)</p>
+                <p><b>마우스 우클릭 / E:</b> 활 쏘기</p>
+            </div>
+            <div id="status-container">
+                <div id="status-msg">성문을 부숴라!</div>
+                <div style="color:white; margin-bottom: 4px;">내 체력</div>
+                <div id="health-bar-container"><div id="health-bar"></div></div>
+            </div>
+        </div>
+
+        <div class="mobile-controls">
+            <div class="btn" id="btn-shoot">활쏘기</div>
+            <div class="btn" id="btn-attack">성문<br>타격</div>
+            <div class="btn" id="btn-jump">점프</div>
+        </div>
+    </div>
+
+    <!-- 게임 오버 및 재시작 스크린 -->
+    <div id="game-over-screen">
+        <div id="game-over-title">전사했습니다...</div>
+        <button id="btn-restart">다시 도전하기</button>
+    </div>
+
+    <script>
+        let scene, camera, renderer, world;
+        let playerBody, pitchObject, yawObject;
+        
+        // 이동 및 입력 관련 (움직임 속도 대폭 상향)
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let isDragging = false;
+        let lastMouseX = 0, lastMouseY = 0;
+        let touchID = null;
+        const moveSpeed = 25; // 기존 15 -> 25로 상향 (경쾌한 이동)
+        const jumpVelocity = 18; // 점프력 상승
+        
+        let playerHealth = 100;
+        let isDead = false;
+
+        // 성문 및 물리 변수
+        let gateMeshes = [], gateBodies = [];
+        let gateHealth = 100, gateIntact = true;
+        
+        // 전투 변수
+        const archers = [], arrows = [];
+        const ARROW_SPEED = 90;
+        let fpBowGroup, fpArrow;
+        let isBowAnimating = false, bowAnimTime = 0;
+        
+        let lastTime = performance.now();
+
+        // UI 요소
+        const statusEl = document.getElementById('status-msg');
+        const healthBarEl = document.getElementById('health-bar');
+        const damageOverlay = document.getElementById('damage-overlay');
+        const gameOverScreen = document.getElementById('game-over-screen');
+
+        init();
+
+        function init() {
+            // Three.js 씬 설정
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB);
+            scene.fog = new THREE.Fog(0x87CEEB, 20, 150);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // 조명
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+            dirLight.position.set(50, 100, 50);
+            dirLight.castShadow = true;
+            dirLight.shadow.camera.left = -100; dirLight.shadow.camera.right = 100;
+            dirLight.shadow.camera.top = 100; dirLight.shadow.camera.bottom = -100;
+            scene.add(dirLight);
+
+            // Cannon.js 물리 엔진 초기화
+            world = new CANNON.World();
+            world.gravity.set(0, -40, 0); // 빠른 낙하를 위해 중력 유지
+            world.broadphase = new CANNON.NaiveBroadphase();
+            world.solver.iterations = 10;
+
+            const groundMat = new CANNON.Material();
+            const wallMat = new CANNON.Material();
+            world.addContactMaterial(new CANNON.ContactMaterial(groundMat, wallMat, { friction: 0.1, restitution: 0.0 }));
+
+            createEnvironment(groundMat, wallMat);
+            createPlayer();
+            setupInput();
+
+            // 재시작 버튼 이벤트 연결
+            document.getElementById('btn-restart').addEventListener('click', resetGame);
+            document.getElementById('btn-restart').addEventListener('touchstart', (e) => { e.preventDefault(); resetGame(); });
+
+            window.addEventListener('resize', onWindowResize, false);
+            
+            // 애니메이션 루프 시작
+            window.onload = () => requestAnimationFrame(animate);
+        }
+
+        function createBrickTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256; canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#696969'; ctx.fillRect(0, 0, 256, 256);
+            ctx.strokeStyle = '#444'; ctx.lineWidth = 4;
+            for (let y = 0; y <= 256; y += 32) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(256, y); ctx.stroke();
+                const offset = (y / 32) % 2 === 0 ? 0 : 32;
+                for (let x = 0; x <= 256; x += 64) {
+                    ctx.beginPath(); ctx.moveTo(x + offset, y); ctx.lineTo(x + offset, y + 32); ctx.stroke();
+                }
+            }
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping;
+            return tex;
+        }
+
+        function createEnvironment(groundMat, wallMat) {
+            // 바닥
+            const groundBody = new CANNON.Body({ mass: 0, material: groundMat, shape: new CANNON.Plane() });
+            groundBody.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+            world.addBody(groundBody);
+
+            const groundMesh = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), new THREE.MeshStandardMaterial({ color: 0x556B2F, roughness: 0.8 }));
+            groundMesh.rotation.x = -Math.PI / 2; groundMesh.receiveShadow = true;
+            scene.add(groundMesh);
+
+            const brickTex = createBrickTexture();
+
+            // 성벽 (U자형)
+            createWall(-30, 10, -30, 50, 20, 10, wallMat, brickTex); 
+            createWall(30, 10, -30, 50, 20, 10, wallMat, brickTex);  
+            createWall(0, 18, -30, 10, 4, 10, wallMat, brickTex);    
+
+            createWall(-50, 10, 20, 10, 20, 90, wallMat, brickTex);  
+            createWall(50, 10, 20, 10, 20, 90, wallMat, brickTex);   
+
+            createCrenellations(wallMat, brickTex);
+            placeSoldiers();
+            createBreakableGate();
+        }
+
+        function createWall(x, y, z, w, h, d, physMat, tex) {
+            const body = new CANNON.Body({ mass: 0, material: physMat, shape: new CANNON.Box(new CANNON.Vec3(w/2, h/2, d/2)) });
+            body.position.set(x, y, z); world.addBody(body);
+
+            const wallTex = tex.clone(); wallTex.needsUpdate = true;
+            wallTex.repeat.set(Math.max(w, d) / 10, h / 10);
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.9 }));
+            mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true;
+            scene.add(mesh);
+        }
+
+        function createCrenellations(mat, tex) {
+            const y = 21.25;
+            for(let x = -54; x <= 54; x += 4) createWall(x, y, -26, 2, 2.5, 2, mat, tex);
+            for(let z = -22; z <= 64; z += 4) {
+                createWall(-46, y, z, 2, 2.5, 2, mat, tex);
+                createWall(46, y, z, 2, 2.5, 2, mat, tex);
+            }
+        }
+
+        function createSoldier(x, y, z, rotY) {
+            const grp = new THREE.Group(); grp.position.set(x, y, z); grp.rotation.y = rotY;
+            
+            const body = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 1.5, 8), new THREE.MeshStandardMaterial({ color: 0x8b0000 }));
+            body.position.y = 0.75; body.castShadow = true; grp.add(body);
+            
+            const head = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 8), new THREE.MeshStandardMaterial({ color: 0xffccaa }));
+            head.position.y = 1.7; grp.add(head);
+            
+            const helm = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.45, 0.3, 8), new THREE.MeshStandardMaterial({ color: 0x444444 }));
+            helm.position.y = 1.9; grp.add(helm);
+
+            const bow = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.05, 8, 16, Math.PI), new THREE.MeshStandardMaterial({ color: 0x5C4033 }));
+            bow.position.set(0, 1.2, 0.8); bow.rotation.z = Math.PI/2; grp.add(bow);
+
+            scene.add(grp);
+            // 재시작 시 원래 방향을 기억하기 위해 initialRot 저장
+            archers.push({ mesh: grp, bow: bow, initialRot: rotY, lastShot: performance.now() + Math.random()*2000, hp: 1 });
+        }
+
+        function placeSoldiers() {
+            const y = 20;
+            for(let x = -52; x <= 52; x += 8) if(Math.abs(x) >= 5) createSoldier(x, y, -28, 0);
+            createSoldier(0, y, -28, 0); 
+            for(let z = -18; z <= 60; z += 8) { createSoldier(-48, y, z, Math.PI/2); createSoldier(48, y, z, -Math.PI/2); }
+        }
+
+        function createBreakableGate() {
+            const gateW = 10, gateH = 16, gateD = 2;
+            const rows = 8, cols = 5;
+            const pw = gateW/cols, ph = gateH/rows;
+            const wood = new THREE.MeshStandardMaterial({ color: 0x4A2E00 });
+            const iron = new THREE.MeshStandardMaterial({ color: 0x222222 });
+
+            for(let i=0; i<cols; i++) {
+                for(let j=0; j<rows; j++) {
+                    const x = -gateW/2 + pw/2 + i*pw, y = ph/2 + j*ph, z = -30;
+                    const mesh = new THREE.Mesh(new THREE.BoxGeometry(pw-0.05, ph-0.05, gateD), wood);
+                    if(j===2 || j===5) {
+                        const band = new THREE.Mesh(new THREE.BoxGeometry(pw, 0.4, gateD+0.1), iron);
+                        mesh.add(band);
+                    }
+                    mesh.position.set(x, y, z); scene.add(mesh);
+                    
+                    const body = new CANNON.Body({ mass: 0, position: new CANNON.Vec3(x, y, z), shape: new CANNON.Box(new CANNON.Vec3(pw/2, ph/2, gateD/2)) });
+                    world.addBody(body);
+                    
+                    gateMeshes.push(mesh); 
+                    gateBodies.push({ 
+                        body: body, 
+                        initialPos: new CANNON.Vec3(x, y, z), // 재시작을 위해 초기 위치 저장
+                        isBroken: false 
+                    });
+                }
+            }
+        }
+
+        function createPlayer() {
+            // 구체 몸통으로 부드러운 충돌 구현, fixedRotation으로 넘어짐 방지
+            playerBody = new CANNON.Body({ mass: 80, shape: new CANNON.Sphere(1.5), fixedRotation: true });
+            playerBody.position.set(0, 5, 40);
+            world.addBody(playerBody);
+
+            pitchObject = new THREE.Object3D(); pitchObject.add(camera);
+            yawObject = new THREE.Object3D(); yawObject.add(pitchObject); yawObject.position.y = 2;
+            scene.add(yawObject);
+
+            fpBowGroup = new THREE.Group();
+            const bowGeo = new THREE.TorusGeometry(0.6, 0.03, 8, 16, Math.PI);
+            const bowMat = new THREE.MeshStandardMaterial({ color: 0x3e2723 });
+            const bow = new THREE.Mesh(bowGeo, bowMat);
+            bow.rotation.set(0, Math.PI/2, -Math.PI/2); fpBowGroup.add(bow);
+            
+            const arrGeo = new THREE.CylinderGeometry(0.02, 0.02, 1.5, 8);
+            const arrMat = new THREE.MeshStandardMaterial({ color: 0xd2b48c });
+            fpArrow = new THREE.Mesh(arrGeo, arrMat);
+            fpArrow.rotation.x = Math.PI/2; fpArrow.position.z = -0.2; fpBowGroup.add(fpArrow);
+            
+            fpBowGroup.position.set(0.5, -0.4, -1.0); fpBowGroup.rotation.y = Math.PI/16;
+            pitchObject.add(fpBowGroup);
+        }
+
+        function setupInput() {
+            // 키보드 조작
+            document.addEventListener('keydown', (e) => {
+                if(isDead) return;
+                switch(e.code) {
+                    case 'KeyW': moveForward = true; break;
+                    case 'KeyS': moveBackward = true; break;
+                    case 'KeyA': moveLeft = true; break;
+                    case 'KeyD': moveRight = true; break;
+                    case 'Space': if(playerBody.position.y < 2.5) playerBody.velocity.y = jumpVelocity; break;
+                    case 'KeyE': shootArrow("player"); break;
+                }
+            });
+            document.addEventListener('keyup', (e) => {
+                switch(e.code) {
+                    case 'KeyW': moveForward = false; break;
+                    case 'KeyS': moveBackward = false; break;
+                    case 'KeyA': moveLeft = false; break;
+                    case 'KeyD': moveRight = false; break;
+                }
+            });
+
+            // 마우스 화면 고정 (Pointer Lock) 기능 복구
+            document.body.addEventListener('click', (e) => {
+                if (isDead || e.target.className.includes('btn') || e.target.id === 'btn-restart') return;
+                
+                // 마우스 잠금 요청 (ESC 후 바로 클릭했을 때의 에러 방지용 예외 처리)
+                try {
+                    const promise = document.body.requestPointerLock();
+                    if(promise) promise.catch(err => {});
+                } catch(err) {}
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if(isDead) return;
+                
+                // 마우스가 화면에 고정된 상태일 때만 무한대로 시야 회전 (드래그 불필요)
+                if (document.pointerLockElement === document.body) {
+                    yawObject.rotation.y -= e.movementX * 0.002;
+                    pitchObject.rotation.x -= e.movementY * 0.002;
+                    pitchObject.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitchObject.rotation.x));
+                }
+            });
+
+            document.addEventListener('mousedown', (e) => {
+                if(isDead) return;
+                
+                // 마우스가 화면에 고정된 상태에서만 공격 및 사격 작동
+                if (document.pointerLockElement === document.body) {
+                    if(e.button === 0) checkGateAttack();
+                    if(e.button === 2) shootArrow("player");
+                }
+            });
+            
+            document.addEventListener('contextmenu', e => e.preventDefault());
+
+            // 모바일 기기는 터치 드래그로 시야 회전 유지
+            document.addEventListener('touchstart', (e) => {
+                if(isDead || e.target.className.includes('btn') || e.target.id === 'btn-restart') return;
+                const touch = e.changedTouches[0];
+                isDragging = true;
+                lastMouseX = touch.clientX;
+                lastMouseY = touch.clientY;
+                touchID = touch.identifier;
+            }, {passive: false});
+
+            document.addEventListener('touchmove', (e) => {
+                if(!isDragging || isDead) return;
+                for(let i=0; i<e.changedTouches.length; i++) {
+                    if(e.changedTouches[i].identifier === touchID) {
+                        const touch = e.changedTouches[i];
+                        const movX = touch.clientX - lastMouseX;
+                        const movY = touch.clientY - lastMouseY;
+                        lastMouseX = touch.clientX;
+                        lastMouseY = touch.clientY;
+
+                        yawObject.rotation.y -= movX * 0.005;
+                        pitchObject.rotation.x -= movY * 0.005;
+                        pitchObject.rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitchObject.rotation.x));
+                        e.preventDefault();
+                    }
+                }
+            }, {passive: false});
+
+            document.addEventListener('touchend', (e) => {
+                for(let i=0; i<e.changedTouches.length; i++) {
+                    if(e.changedTouches[i].identifier === touchID) {
+                        isDragging = false; touchID = null;
+                    }
+                }
+            });
+
+            // 모바일 UI 버튼
+            document.getElementById('btn-jump').addEventListener('touchstart', (e) => { e.preventDefault(); if(!isDead && playerBody.position.y < 2.5) playerBody.velocity.y = jumpVelocity; });
+            document.getElementById('btn-shoot').addEventListener('touchstart', (e) => { e.preventDefault(); shootArrow("player"); });
+            document.getElementById('btn-attack').addEventListener('touchstart', (e) => { e.preventDefault(); checkGateAttack(); });
+        }
+
+        function checkGateAttack() {
+            if (!gateIntact) return;
+            const dist = new THREE.Vector3(playerBody.position.x, playerBody.position.y, playerBody.position.z).distanceTo(new THREE.Vector3(0, 5, -30));
+            if (dist < 20) { // 타격 범위 상향
+                gateHealth -= 25;
+                statusEl.textContent = `성문 타격! (${gateHealth}%)`;
+                if (gateHealth <= 0) breakGate();
+            }
+        }
+
+        function breakGate() {
+            gateIntact = false; statusEl.textContent = "성문 돌파 완료!"; statusEl.style.color = "#4ade80";
+            gateBodies.forEach(gb => {
+                const b = gb.body; 
+                b.mass = 20; b.type = CANNON.Body.DYNAMIC; b.updateMassProperties();
+                const fx = b.position.x * 200 + (Math.random()-0.5)*400;
+                const fy = Math.random()*500 + 200;
+                const fz = -1000 - Math.random()*1000;
+                b.velocity.set(fx/20, fy/20, fz/20); // 폭발 속도 직접 적용
+                b.angularVelocity.set((Math.random()-0.5)*20, (Math.random()-0.5)*20, (Math.random()-0.5)*20);
+                gb.isBroken = true;
+            });
+        }
+
+        function createArrowMesh() {
+            const grp = new THREE.Group();
+            const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.5, 8), new THREE.MeshStandardMaterial({ color: 0xd2b48c }));
+            shaft.rotation.x = Math.PI/2; grp.add(shaft);
+            return grp;
+        }
+
+        function shootArrow(type, pos = null, dirVec = null) {
+            if(type === "player" && (isBowAnimating || isDead)) return;
+            
+            const b = new CANNON.Body({ mass: 0.5, shape: new CANNON.Cylinder(0.02, 0.02, 1.5, 8) });
+            const m = createArrowMesh();
+            
+            if (type === "player") {
+                const d = new THREE.Vector3(); camera.getWorldDirection(d);
+                b.position.copy(camera.getWorldPosition(new THREE.Vector3()));
+                b.velocity.set(d.x*ARROW_SPEED, d.y*ARROW_SPEED, d.z*ARROW_SPEED);
+                m.quaternion.copy(camera.getWorldQuaternion(new THREE.Quaternion()));
+                isBowAnimating = true; bowAnimTime = 0; fpArrow.visible = false;
+            } else {
+                b.position.copy(pos); b.velocity.set(dirVec.x*ARROW_SPEED, dirVec.y*ARROW_SPEED, dirVec.z*ARROW_SPEED);
+            }
+            
+            world.addBody(b); scene.add(m);
+            arrows.push({ mesh: m, body: b, type: type, active: true });
+        }
+
+        function takeDamage() {
+            if(isDead) return;
+            playerHealth -= 15;
+            healthBarEl.style.width = Math.max(0, playerHealth) + "%";
+            if(playerHealth < 40) healthBarEl.style.background = "#ff3333";
+            damageOverlay.style.opacity = 0.8; setTimeout(() => damageOverlay.style.opacity = 0, 150);
+            
+            if(playerHealth <= 0) {
+                isDead = true; 
+                statusEl.textContent = ""; 
+                gameOverScreen.style.display = 'flex'; // 게임 오버 스크린 표시
+            }
+        }
+
+        function resetGame() {
+            // 체력 및 상태 초기화
+            isDead = false;
+            playerHealth = 100;
+            healthBarEl.style.width = "100%";
+            healthBarEl.style.background = "#4ade80";
+            statusEl.textContent = "성문을 부숴라!";
+            statusEl.style.color = "#ffaa00";
+
+            // 플레이어 위치 초기화
+            playerBody.position.set(0, 5, 40);
+            playerBody.velocity.set(0,0,0);
+            yawObject.rotation.y = 0;
+            pitchObject.rotation.x = 0;
+
+            // 성문 복구
+            gateHealth = 100;
+            gateIntact = true;
+            gateBodies.forEach((gb, i) => {
+                gb.isBroken = false;
+                gb.body.mass = 0;
+                gb.body.type = CANNON.Body.STATIC;
+                gb.body.updateMassProperties();
+                gb.body.position.copy(gb.initialPos);
+                gb.body.quaternion.set(0,0,0,1);
+                gb.body.velocity.set(0,0,0);
+                gb.body.angularVelocity.set(0,0,0);
+                gateMeshes[i].position.copy(gb.initialPos);
+                gateMeshes[i].quaternion.set(0,0,0,1);
+            });
+
+            // 적 궁수 부활
+            archers.forEach(ar => {
+                ar.hp = 1;
+                ar.mesh.rotation.x = 0;
+                ar.mesh.rotation.y = ar.initialRot;
+                ar.lastShot = performance.now() + Math.random()*2000;
+            });
+
+            // 화살 제거
+            arrows.forEach(a => {
+                scene.remove(a.mesh);
+                world.removeBody(a.body);
+            });
+            arrows.length = 0;
+
+            // 키보드 입력 초기화
+            moveForward = moveBackward = moveLeft = moveRight = false;
+            
+            // 스크린 숨기기
+            gameOverScreen.style.display = 'none';
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = performance.now();
+            const delta = Math.min((time - lastTime) / 1000, 0.1);
+            lastTime = time;
+
+            world.step(1/60, delta, 3);
+
+            // 안정적인 이동 계산 로직 (좌표계 보정)
+            if (!isDead) {
+                const dir = new THREE.Vector3(Number(moveRight) - Number(moveLeft), 0, Number(moveBackward) - Number(moveForward));
+                if (dir.lengthSq() > 0) dir.normalize();
+                
+                const angle = yawObject.rotation.y;
+                // 현재 시선(Y축 회전)에 맞춰 X, Z 방향 벡터 적용
+                playerBody.velocity.x = (dir.x * Math.cos(angle) + dir.z * Math.sin(angle)) * moveSpeed;
+                playerBody.velocity.z = (-dir.x * Math.sin(angle) + dir.z * Math.cos(angle)) * moveSpeed;
+            } else {
+                playerBody.velocity.x = 0; playerBody.velocity.z = 0;
+            }
+
+            yawObject.position.set(playerBody.position.x, playerBody.position.y + 1.5, playerBody.position.z);
+
+            // 파편 동기화
+            gateBodies.forEach((gb, i) => {
+                if (gb.isBroken) {
+                    gateMeshes[i].position.copy(gb.body.position);
+                    gateMeshes[i].quaternion.copy(gb.body.quaternion);
+                }
+            });
+
+            // 화살 및 적군 AI
+            arrows.forEach(a => {
+                if(!a.active) return;
+                a.mesh.position.copy(a.body.position);
+                if(a.body.velocity.lengthSquared() > 1) {
+                    const v = a.body.velocity;
+                    a.mesh.lookAt(a.body.position.x+v.x, a.body.position.y+v.y, a.body.position.z+v.z);
+                }
+                if(a.body.position.y < 0) { a.active = false; a.body.velocity.set(0,0,0); }
+                
+                if(a.type === "player") {
+                    archers.forEach(ar => {
+                        if(ar.hp > 0 && a.mesh.position.distanceTo(ar.mesh.position) < 2) {
+                            ar.hp = 0; ar.mesh.rotation.x = -Math.PI/2; a.active = false; a.body.velocity.set(0,0,0);
+                        }
+                    });
+                } else if(a.type === "enemy" && a.mesh.position.distanceTo(yawObject.position) < 2) {
+                    takeDamage(); a.active = false; a.body.velocity.set(0,0,0);
+                }
+            });
+
+            archers.forEach(ar => {
+                if (ar.hp > 0 && time > ar.lastShot && !isDead) {
+                    ar.lastShot = time + Math.random()*2000 + 2000;
+                    if (ar.mesh.position.distanceTo(yawObject.position) < 70) {
+                        const d = new THREE.Vector3().subVectors(yawObject.position, ar.mesh.position).normalize(); d.y += 0.15;
+                        shootArrow("enemy", new CANNON.Vec3(ar.mesh.position.x, ar.mesh.position.y+1, ar.mesh.position.z), d);
+                        ar.mesh.lookAt(yawObject.position.x, ar.mesh.position.y, yawObject.position.z);
+                        ar.bow.rotation.x = -0.5; setTimeout(() => ar.bow.rotation.x = 0, 300);
+                    }
+                }
+            });
+
+            // 1인칭 활 쏘기 애니메이션
+            if (isBowAnimating) {
+                bowAnimTime += delta;
+                if(bowAnimTime < 0.1) { fpBowGroup.rotation.x = bowAnimTime*3; fpBowGroup.position.z = -1+bowAnimTime*2; }
+                else if(bowAnimTime < 0.4) { fpBowGroup.rotation.x = 0.3-(bowAnimTime-0.1); fpBowGroup.position.z = -0.8-(bowAnimTime-0.1); }
+                else if(bowAnimTime < 0.7) { fpBowGroup.rotation.x = 0; fpBowGroup.position.z = -1; fpArrow.visible = true; fpArrow.position.z = 0.5-(bowAnimTime-0.4)*2.3; }
+                else { isBowAnimating = false; fpArrow.position.z = -0.2; }
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+    </script>
+</body>
+</html>
