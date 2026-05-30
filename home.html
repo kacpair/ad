@@ -2,23 +2,155 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>크롤소프트 공식 웹사이트</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>크롤소프트 (KROLSOFT)</title>
+    <style>
+        /* 기본 스타일 초기화 및 세련된 다크 모드 테마 */
+        body {
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            line-height: 1.7;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* 메인 컨테이너 - 넓고 시원하게 배치 */
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 60px 24px;
+        }
+
+        /* 헤더 디자인 - 대형 폰트와 포인트 컬러 */
+        header {
+            border-bottom: 1px solid #334155;
+            padding-bottom: 32px;
+            margin-bottom: 48px;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin: 0 0 16px 0;
+            background: linear-gradient(to right, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            font-size: 1.15rem;
+            color: #94a3b8;
+            margin: 0;
+        }
+
+        /* 카드 형태의 섹션 디자인 */
+        section {
+            background-color: #1e293b;
+            border-radius: 16px;
+            padding: 32px;
+            margin-bottom: 32px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            border: 1px solid #334155;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-top: 0;
+            margin-bottom: 24px;
+            color: #38bdf8;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* 사업자 정보 테이블 형태 배치 */
+        .info-grid {
+            display: grid;
+            grid-template-columns: 140px 1fr;
+            row-gap: 16px;
+            font-size: 1.05rem;
+        }
+
+        .info-label {
+            color: #94a3b8;
+            font-weight: 600;
+        }
+
+        .info-value {
+            color: #e2e8f0;
+        }
+
+        /* 출시 앱 정보 강조 디자인 */
+        .app-status {
+            display: inline-block;
+            background-color: #0369a1;
+            color: #e0f2fe;
+            padding: 4px 12px;
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+
+        .app-title {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #f1f5f9;
+            margin: 0 0 8px 0;
+        }
+
+        .app-desc {
+            color: #94a3b8;
+            margin: 0;
+        }
+
+        /* 하단 푸터 */
+        footer {
+            text-align: center;
+            margin-top: 64px;
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+    </style>
 </head>
 <body>
-    <h1>크롤소프트 (KROLSOFT)</h1>
-    <p>저희는 안드로이드 앱 서비스를 개발하고 제공하는 1인 개발사입니다.</p>
-    
-    <hr>
-    
-    <h3>사업자 정보 (Business Information)</h3>
-    <ul>
-        <li><strong>상호명:</strong> [KROLSOFT]</li>
-        <li><strong>대표자:</strong> [KIMSEUNGBONG]</li>
-        <li><strong>사업자등록번호:</strong> [671-17-02619]</li>
-        <li><strong>이메일:</strong> [contact@krolsoft.cyou]</li>
-    </ul>
 
-    <h3>출시 앱 정보</h3>
-    <p>현재 구글 플레이 스토어에 [점입가경] 출시를 준비 중입니다.</p>
+    <div class="container">
+        <header>
+            <h1>크롤소프트 (KROLSOFT)</h1>
+            <p class="subtitle">저희는 안드로이드 앱 서비스를 개발하고 제공하는 1인 개발사입니다.</p>
+        </header>
+
+        <section>
+            <h2>📋 사업자 정보</h2>
+            <div class="info-grid">
+                <div class="info-label">상호명</div>
+                <div class="info-value">KROLSOFT</div>
+
+                <div class="info-label">대표자</div>
+                <div class="info-value">KIMSEUNGBONG</div>
+
+                <div class="info-label">사업자등록번호</div>
+                <div class="info-value">671-17-02619</div>
+
+                <div class="info-label">이메일</div>
+                <div class="info-value">contact@krolsoft.cyou</div>
+            </div>
+        </section>
+
+        <section>
+            <h2>🚀 출시 앱 정보</h2>
+            <div class="app-status">출시 준비 중</div>
+            <p class="app-title">[점입가경]</p>
+            <p class="app-desc">현재 구글 플레이 스토어에 정식 출시를 위해 심사를 준비하고 있습니다. 곧 만나보실 수 있습니다.</p>
+        </section>
+
+        <footer>
+            <p>&copy; 2026 KROLSOFT. All rights reserved.</p>
+        </footer>
+    </div>
+
 </body>
 </html>
